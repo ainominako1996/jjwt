@@ -69,39 +69,28 @@ class Aes128CbcHmacSha256Test {
 
         def alg = EncryptionAlgorithms.A128CBC_HS256
 
-        EncryptionRequest request = EncryptionRequests.symmetric()
-                .setAdditionalAuthenticatedData(A)
-                .setInitializationVector(IV)
-                .setKey(KEY)
-                .setPlaintext(P)
-                .build();
+        def request = new DefaultEncryptionRequest(P, KEY, null, null, IV, A)
 
         def r = alg.encrypt(request);
 
-        assertTrue r instanceof AuthenticatedEncryptionResult
-        AuthenticatedEncryptionResult result = r as AuthenticatedEncryptionResult;
+        assertTrue r instanceof AeadIvEncryptionResult
+        AeadIvEncryptionResult result = r as AeadIvEncryptionResult;
 
-        byte[] resultCiphertext = result.getCiphertext()
-        byte[] resultTag = result.getAuthenticationTag();
-        byte[] resultIv = result.getInitializationVector();
+        byte[] ciphertext = result.getCiphertext()
+        byte[] tag = result.getAuthenticationTag()
+        byte[] iv = result.getInitializationVector()
 
-        assertArrayEquals E, resultCiphertext
-        assertArrayEquals T, resultTag
-        assertArrayEquals IV, resultIv //shouldn't have been altered
+        assertArrayEquals E, ciphertext
+        assertArrayEquals T, tag
+        assertArrayEquals IV, iv //shouldn't have been altered
 
         // now test decryption:
 
-        def dreq = DecryptionRequests.symmetric()
-                .setAdditionalAuthenticatedData(A)
-                .setCiphertext(resultCiphertext)
-                .setInitializationVector(resultIv)
-                .setKey(KEY)
-                .setAuthenticationTag(resultTag)
-                .build();
+        def dreq = new DefaultAeadIvRequest(ciphertext, KEY, null, null, iv, A, tag)
 
         byte[] decryptionResult = alg.decrypt(dreq)
 
-        assertArrayEquals(P, decryptionResult);
+        assertArrayEquals(P, decryptionResult)
     }
 
 }

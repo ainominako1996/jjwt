@@ -197,10 +197,11 @@ public final class Assert {
         notEmpty(array, "[Assertion failed] - this array must not be empty: it must contain at least 1 element");
     }
 
-    public static void notEmpty(byte[] array, String msg) {
+    public static byte[] notEmpty(byte[] array, String msg) {
         if (Objects.isEmpty(array)) {
             throw new IllegalArgumentException(msg);
         }
+        return array;
     }
 
     /**

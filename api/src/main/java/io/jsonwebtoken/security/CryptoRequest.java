@@ -1,46 +1,36 @@
-/*
- * Copyright (C) 2016 jsonwebtoken.io
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.jsonwebtoken.security;
 
 import java.security.Key;
+import java.security.Provider;
+import java.security.SecureRandom;
 
 /**
  * @since JJWT_RELEASE_VERSION
  */
-public interface CryptoRequest<T extends Key> {
+public interface CryptoRequest<T, K extends Key> extends CryptoMessage<T> {
 
     /**
-     * Returns the key to use for encryption or decryption depending on the type of request.
+     * Returns the JCA provider that should be used for cryptographic operations during the request or
+     * {@code null} if the JCA subsystem preferred provider should be used.
      *
-     * @return the key to use for encryption or decryption depending on the type of request.
+     * @return the JCA provider that should be used for cryptographic operations during the request or
+     * {@code null} if the JCA subsystem preferred provider should be used.
      */
-    T getKey();
+    Provider getProvider();
 
     /**
-     * Returns the initialization vector to use during encryption or decryption depending on the type of request.
-     * <p>
-     * <p>If this value is {@code null} on an {@link EncryptionRequest}, a default initialization vector will be
-     * auto-generated, as it is never safe to use most cryptographic algorithms without initialization vectors
-     * (such as AES).</p>
-     * <p>
-     * <p>This implies that all decryption requests must always supply an initialization vector since encryption
-     * will always have one.</p>
+     * Returns the {@code SecureRandom} to use when performing cryptographic operations during the request, or
+     * {@code null} if a default {@link SecureRandom} should be used.
      *
-     * @return the initialization vector to use during encryption or decryption depending on the type of request.
+     * @return the {@code SecureRandom} to use when performing cryptographic operations during the request, or
+     * {@code null} if a default {@link SecureRandom} should be used.
      */
-    byte[] getInitializationVector();
+    SecureRandom getSecureRandom();
 
+    /**
+     * Returns the key to use for signing, wrapping, encryption or decryption depending on the type of request.
+     *
+     * @return the key to use for signing, wrapping, encryption or decryption depending on the type of request.
+     */
+    K getKey();
 }

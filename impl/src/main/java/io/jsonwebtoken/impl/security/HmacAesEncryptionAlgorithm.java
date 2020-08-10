@@ -1,34 +1,32 @@
 package io.jsonwebtoken.impl.security;
 
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.impl.crypto.MacProvider;
-import io.jsonwebtoken.impl.crypto.MacSigner;
 import io.jsonwebtoken.lang.Assert;
-import io.jsonwebtoken.security.AuthenticatedDecryptionRequest;
-import io.jsonwebtoken.security.CryptoException;
-import io.jsonwebtoken.security.DecryptionRequest;
-import io.jsonwebtoken.security.EncryptionRequest;
-import io.jsonwebtoken.security.EncryptionResult;
+import io.jsonwebtoken.security.AeadIvRequest;
+import io.jsonwebtoken.security.AeadIvEncryptionResult;
+import io.jsonwebtoken.security.AeadRequest;
+import io.jsonwebtoken.security.CryptoRequest;
+import io.jsonwebtoken.security.SignatureException;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.security.Key;
 import java.util.Arrays;
-
-import static io.jsonwebtoken.lang.Arrays.*;
 
 /**
  * @since JJWT_RELEASE_VERSION
  */
-public class HmacAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
+@SuppressWarnings("unused") //used via reflection in the io.jsonwebtoken.security.EncryptionAlgorithms class
+public class HmacAesEncryptionAlgorithm extends AbstractAeadAesEncryptionAlgorithm {
 
     private static final String TRANSFORMATION_STRING = "AES/CBC/PKCS5Padding";
 
-    private final SignatureAlgorithm SIGALG;
+    private final MacSignatureAlgorithm SIGALG;
 
-    public HmacAesEncryptionAlgorithm(String name, SignatureAlgorithm sigAlg) {
-        super(name, TRANSFORMATION_STRING, AES_BLOCK_SIZE_BITS, sigAlg.getMinKeyLength());
+    public HmacAesEncryptionAlgorithm(String name, MacSignatureAlgorithm sigAlg) {
+        super(name, TRANSFORMATION_STRING, AES_BLOCK_SIZE_BITS, sigAlg.getMinKeyLength() * 2);
         this.SIGALG = sigAlg;
     }
 
@@ -37,7 +35,7 @@ public class HmacAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
 
         int subKeyLength = getRequiredKeyByteLength() / 2;
 
-        byte[] macKeyBytes = generateHmacKeyBytes();
+        byte[] macKeyBytes = this.SIGALG.generateKey().getEncoded();
         Assert.notEmpty(macKeyBytes, "Generated HMAC key byte array cannot be null or empty.");
 
         if (macKeyBytes.length > subKeyLength) {
@@ -67,25 +65,25 @@ public class HmacAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
         System.arraycopy(macKeyBytes, 0, combinedKeyBytes, 0, macKeyBytes.length);
         System.arraycopy(encKeyBytes, 0, combinedKeyBytes, macKeyBytes.length, encKeyBytes.length);
 
-        return new SecretKeySpec(combinedKeyBytes, getName());
+        return new SecretKeySpec(combinedKeyBytes, "AES");
     }
 
-    protected byte[] generateHmacKeyBytes() {
-        SecretKey macKey = MacProvider.generateKey(SIGALG);
-        return macKey.getEncoded();
+    byte[] assertKeyBytes(CryptoRequest<?, SecretKey> request) {
+        SecretKey key = assertKey(request);
+        return key.getEncoded();
     }
 
     @Override
-    protected EncryptionResult doEncrypt(EncryptionRequest<SecretKey> req) throws Exception {
+    protected AeadIvEncryptionResult doEncrypt(final AeadRequest<byte[], SecretKey> req) throws Exception {
 
         //Ensure IV:
-        byte[] iv = ensureEncryptionIv(req);
+        final byte[] iv = ensureInitializationVector(req);
 
         //Ensure Key:
         byte[] keyBytes = assertKeyBytes(req);
 
         //See if there is any AAD:
-        byte[] aad = getAAD(req); //can be null if request associated data does not exist or is empty
+        final byte[] aad = getAAD(req); //can be null if request associated data does not exist or is empty
 
         int halfCount = keyBytes.length / 2; // https://tools.ietf.org/html/rfc7518#section-5.2
         byte[] macKeyBytes = Arrays.copyOfRange(keyBytes, 0, halfCount);
@@ -93,19 +91,23 @@ public class HmacAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
 
         final SecretKey encryptionKey = new SecretKeySpec(keyBytes, "AES");
 
-        Cipher cipher = createCipher(Cipher.ENCRYPT_MODE, encryptionKey, iv);
-
-        byte[] plaintext = req.getPlaintext();
-        byte[] ciphertext = cipher.doFinal(plaintext);
+        final byte[] ciphertext = newCipherTemplate(req).execute(new CipherCallback<byte[]>() {
+            @Override
+            public byte[] doWithCipher(Cipher cipher) throws Exception {
+                cipher.init(Cipher.ENCRYPT_MODE, encryptionKey, new IvParameterSpec(iv));
+                byte[] plaintext = req.getData();
+                return cipher.doFinal(plaintext);
+            }
+        });
 
         byte[] tag = sign(aad, iv, ciphertext, macKeyBytes);
 
-        return new DefaultAuthenticatedEncryptionResult(iv, ciphertext, tag);
+        return new DefaultAeadIvEncryptionResult(ciphertext, iv, tag);
     }
 
     private byte[] sign(byte[] aad, byte[] iv, byte[] ciphertext, byte[] macKeyBytes) {
 
-        long aadLength = length(aad);
+        long aadLength = io.jsonwebtoken.lang.Arrays.length(aad);
         long aadLengthInBits = aadLength * Byte.SIZE;
         long aadLengthInBitsAsUnsignedInt = aadLengthInBits & 0xffffffffL;
         byte[] AL = toBytes(aadLengthInBitsAsUnsignedInt);
@@ -123,9 +125,9 @@ public class HmacAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
             System.arraycopy(AL, 0, toHash, iv.length + ciphertext.length, AL.length);
         }
 
-        MacSigner macSigner = new MacSigner(SIGALG, macKeyBytes);
-
-        byte[] digest = macSigner.sign(toHash);
+        Key key = new SecretKeySpec(macKeyBytes, SIGALG.getJcaName());
+        CryptoRequest<byte[], Key> request = new DefaultCryptoRequest<>(toHash, key, null, null);
+        byte[] digest = SIGALG.sign(request);
 
         // https://tools.ietf.org/html/rfc7518#section-5.2.2.1 #5 requires truncating the signature
         // to be the same length as the macKey/encKey:
@@ -143,17 +145,12 @@ public class HmacAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
     }
 
     @Override
-    protected byte[] doDecrypt(DecryptionRequest<SecretKey> dreq) throws Exception {
-
-        Assert.isInstanceOf(AuthenticatedDecryptionRequest.class, dreq,
-                "AES_CBC_HMAC_SHA2 encryption always authenticates and therefore requires that DecryptionRequests " +
-                        "are AuthenticatedDecryptionRequest instances.");
-        AuthenticatedDecryptionRequest<SecretKey> req = (AuthenticatedDecryptionRequest<SecretKey>) dreq;
+    protected byte[] doDecrypt(AeadIvRequest<byte[], SecretKey> req) throws Exception {
 
         byte[] tag = req.getAuthenticationTag();
-        Assert.notEmpty(tag, "AuthenticatedDecryptionRequests must include a non-empty authentication tag.");
+        Assert.notEmpty(tag, "AeadDecryptionRequests must include a non-empty authentication tag.");
 
-        byte[] iv = assertDecryptionIv(req);
+        final byte[] iv = assertDecryptionIv(req);
 
         //Ensure Key:
         byte[] keyBytes = assertKeyBytes(req);
@@ -165,20 +162,24 @@ public class HmacAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
         byte[] macKeyBytes = Arrays.copyOfRange(keyBytes, 0, halfCount);
         keyBytes = Arrays.copyOfRange(keyBytes, halfCount, keyBytes.length);
 
-        final SecretKey key = new SecretKeySpec(keyBytes, "AES");
+        final SecretKey decryptionKey = new SecretKeySpec(keyBytes, "AES");
 
-        final byte[] ciphertext = req.getCiphertext();
-
-        Cipher cipher = createCipher(Cipher.DECRYPT_MODE, key, iv);
+        final byte[] ciphertext = req.getData();
 
         // Assert that the aad + iv + ciphertext provided, when signed, equals the tag provided,
         // thereby indicating none of it has been tampered with:
         byte[] digest = sign(aad, iv, ciphertext, macKeyBytes);
         if (!Arrays.equals(digest, tag)) {
-            String msg = "Ciphertext decryption failed: HMAC digest verification failed.";
-            throw new CryptoException(msg);
+            String msg = "Ciphertext decryption failed: Authentication tag verification failed.";
+            throw new SignatureException(msg);
         }
 
-        return cipher.doFinal(ciphertext);
+        return newCipherTemplate(req).execute(new CipherCallback<byte[]>() {
+            @Override
+            public byte[] doWithCipher(Cipher cipher) throws Exception {
+                cipher.init(Cipher.DECRYPT_MODE, decryptionKey, new IvParameterSpec(iv));
+                return cipher.doFinal(ciphertext);
+            }
+        });
     }
 }

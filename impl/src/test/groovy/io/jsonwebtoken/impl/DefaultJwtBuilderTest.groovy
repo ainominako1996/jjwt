@@ -167,7 +167,7 @@ class DefaultJwtBuilderTest {
         def key = Keys.secretKeyFor(alg)
         b.signWith(key, alg)
         String s1 = b.compact()
-        //ensure deprecated signWith(alg, key) produces the same result:
+        //ensure deprecated with(alg, key) produces the same result:
         b.signWith(alg, key)
         String s2 = b.compact()
         assertEquals s1, s2

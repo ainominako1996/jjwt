@@ -15,35 +15,36 @@
  */
 package io.jsonwebtoken.impl.security;
 
-import io.jsonwebtoken.lang.Assert;
-import io.jsonwebtoken.security.EncryptionRequest;
+import io.jsonwebtoken.security.AeadRequest;
+import io.jsonwebtoken.security.AssociatedDataSource;
+import io.jsonwebtoken.security.InitializationVectorSource;
 
 import java.security.Key;
+import java.security.Provider;
 import java.security.SecureRandom;
 
 /**
  * @since JJWT_RELEASE_VERSION
  */
-public class DefaultEncryptionRequest<T extends Key> extends AbstractCryptoRequest<T> implements EncryptionRequest<T> {
+public class DefaultEncryptionRequest<T, K extends Key> extends DefaultCryptoRequest<T, K> implements AeadRequest<T, K>, InitializationVectorSource {
 
-    private final SecureRandom random;
+    private final byte[] iv;
 
-    private final byte[] plaintext;
+    private final byte[] aad;
 
-    public DefaultEncryptionRequest(SecureRandom secureRandom, T key, byte[] iv, byte[] plaintext) {
-        super(key, iv);
-        Assert.notEmpty(plaintext, "plaintext cannot be null or empty.");
-        this.plaintext = plaintext;
-        this.random = secureRandom;
+    public DefaultEncryptionRequest(T data, K key, Provider provider, SecureRandom secureRandom, byte[] iv, byte[] aad) {
+        super(data, key, provider, secureRandom);
+        this.iv = iv;
+        this.aad = aad;
     }
 
     @Override
-    public SecureRandom getSecureRandom() {
-        return this.random;
+    public byte[] getAssociatedData() {
+        return this.aad;
     }
 
     @Override
-    public byte[] getPlaintext() {
-        return this.plaintext;
+    public byte[] getInitializationVector() {
+        return this.iv;
     }
 }

@@ -33,13 +33,14 @@ import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.MissingClaimException;
 import io.jsonwebtoken.PrematureJwtException;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.SigningKeyResolver;
 import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.impl.compression.DefaultCompressionCodecResolver;
-import io.jsonwebtoken.impl.crypto.DefaultJwtSignatureValidator;
-import io.jsonwebtoken.impl.crypto.JwtSignatureValidator;
+import io.jsonwebtoken.impl.crypto.DefaultSignatureValidatorFactory;
+import io.jsonwebtoken.impl.crypto.SignatureValidator;
+import io.jsonwebtoken.impl.crypto.SignatureValidatorFactory;
 import io.jsonwebtoken.impl.lang.LegacyServices;
+import io.jsonwebtoken.impl.security.DefaultVerifySignatureRequest;
 import io.jsonwebtoken.io.Decoder;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.io.DecodingException;
@@ -50,11 +51,17 @@ import io.jsonwebtoken.lang.DateFormats;
 import io.jsonwebtoken.lang.Objects;
 import io.jsonwebtoken.lang.Strings;
 import io.jsonwebtoken.security.InvalidKeyException;
+import io.jsonwebtoken.security.SignatureAlgorithm;
+import io.jsonwebtoken.security.SignatureAlgorithms;
 import io.jsonwebtoken.security.SignatureException;
+import io.jsonwebtoken.security.SymmetricKeySignatureAlgorithm;
+import io.jsonwebtoken.security.VerifySignatureRequest;
 import io.jsonwebtoken.security.WeakKeyException;
 
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
+import java.security.Provider;
 import java.util.Date;
 import java.util.Map;
 
@@ -63,7 +70,11 @@ public class DefaultJwtParser implements JwtParser {
 
     private static final int MILLISECONDS_PER_SECOND = 1000;
 
+    private static final JwtTokenizer jwtTokenizer = new JwtTokenizer();
+
     // TODO: make the folling fields final for v1.0
+    private Provider provider;
+
     private byte[] keyBytes;
 
     private Key key;
@@ -84,12 +95,15 @@ public class DefaultJwtParser implements JwtParser {
 
     /**
      * TODO: remove this constructor before 1.0
+     *
      * @deprecated for backward compatibility only, see other constructors.
      */
     @Deprecated
-    public DefaultJwtParser() { }
+    public DefaultJwtParser() {
+    }
 
-    DefaultJwtParser(SigningKeyResolver signingKeyResolver,
+    DefaultJwtParser(Provider provider,
+                     SigningKeyResolver signingKeyResolver,
                      Key key,
                      byte[] keyBytes,
                      Clock clock,
@@ -98,6 +112,7 @@ public class DefaultJwtParser implements JwtParser {
                      Decoder<String, byte[]> base64UrlDecoder,
                      Deserializer<Map<String, ?>> deserializer,
                      CompressionCodecResolver compressionCodecResolver) {
+        this.provider = provider;
         this.signingKeyResolver = signingKeyResolver;
         this.key = key;
         this.keyBytes = keyBytes;
@@ -554,55 +569,21 @@ public class DefaultJwtParser implements JwtParser {
             throw new MalformedJwtException(msg);
         }
 
-        String base64UrlEncodedHeader = null;
-        String base64UrlEncodedPayload = null;
-        String base64UrlEncodedDigest = null;
-
-        int delimiterCount = 0;
-
-        StringBuilder sb = new StringBuilder(128);
-
-        for (char c : jwt.toCharArray()) {
-
-            if (c == SEPARATOR_CHAR) {
-
-                CharSequence tokenSeq = Strings.clean(sb);
-                String token = tokenSeq != null ? tokenSeq.toString() : null;
-
-                if (delimiterCount == 0) {
-                    base64UrlEncodedHeader = token;
-                } else if (delimiterCount == 1) {
-                    base64UrlEncodedPayload = token;
-                }
-
-                delimiterCount++;
-                sb.setLength(0);
-            } else {
-                sb.append(c);
-            }
-        }
-
-        if (delimiterCount != 2) {
-            String msg = "JWT strings must contain exactly 2 period characters. Found: " + delimiterCount;
-            throw new MalformedJwtException(msg);
-        }
-        if (sb.length() > 0) {
-            base64UrlEncodedDigest = sb.toString();
-        }
-
+        TokenizedJwt tokenized = jwtTokenizer.tokenize(jwt);
 
         // =============== Header =================
         Header header = null;
 
         CompressionCodec compressionCodec = null;
 
-        if (base64UrlEncodedHeader != null) {
-            byte[] bytes = base64UrlDecoder.decode(base64UrlEncodedHeader);
+        if (tokenized.getProtected() != null) {
+
+            byte[] bytes = base64UrlDecoder.decode(tokenized.getProtected());
             String origValue = new String(bytes, Strings.UTF_8);
             Map<String, Object> m = (Map<String, Object>) readValue(origValue);
 
-            if (base64UrlEncodedDigest != null) {
-                header = new DefaultJwsHeader(m);
+            if (tokenized.getDigest() != null) {
+                header = tokenized instanceof TokenizedJwe ? new DefaultJweHeader(m) : new DefaultJwsHeader(m);
             } else {
                 header = new DefaultHeader(m);
             }
@@ -612,8 +593,8 @@ public class DefaultJwtParser implements JwtParser {
 
         // =============== Body =================
         String payload = ""; // https://github.com/jwtk/jjwt/pull/540
-        if (base64UrlEncodedPayload != null) {
-            byte[] bytes = base64UrlDecoder.decode(base64UrlEncodedPayload);
+        if (tokenized.getBody() != null) {
+            byte[] bytes = base64UrlDecoder.decode(tokenized.getBody());
             if (compressionCodec != null) {
                 bytes = compressionCodec.decompress(bytes);
             }
@@ -628,7 +609,7 @@ public class DefaultJwtParser implements JwtParser {
         }
 
         // =============== Signature =================
-        if (base64UrlEncodedDigest != null) { //it is signed - validate the signature
+        if (tokenized.getDigest() != null) { //it is signed - validate the signature
 
             JwsHeader jwsHeader = (JwsHeader) header;
 
@@ -637,11 +618,11 @@ public class DefaultJwtParser implements JwtParser {
             if (header != null) {
                 String alg = jwsHeader.getAlgorithm();
                 if (Strings.hasText(alg)) {
-                    algorithm = SignatureAlgorithm.forName(alg);
+                    algorithm = SignatureAlgorithms.forName(alg);
                 }
             }
 
-            if (algorithm == null || algorithm == SignatureAlgorithm.NONE) {
+            if (algorithm == null || algorithm == SignatureAlgorithms.NONE) {
                 //it is plaintext, but it has a signature.  This is invalid:
                 String msg = "JWT string has a digest/signature, but the header does not reference a valid signature " +
                     "algorithm.";
@@ -671,30 +652,39 @@ public class DefaultJwtParser implements JwtParser {
                 }
 
                 if (!Objects.isEmpty(keyBytes)) {
-
-                    Assert.isTrue(algorithm.isHmac(),
-                        "Key bytes can only be specified for HMAC signatures. Please specify a PublicKey or PrivateKey instance.");
-
-                    key = new SecretKeySpec(keyBytes, algorithm.getJcaName());
+                    Assert.isTrue(algorithm instanceof SymmetricKeySignatureAlgorithm,
+                        "Key bytes can only be specified for symmetric key signatures. Please specify a PublicKey or PrivateKey instance.");
+                    key = new SecretKeySpec(keyBytes, ((SymmetricKeySignatureAlgorithm) algorithm).generateKey().getAlgorithm());
                 }
             }
 
             Assert.notNull(key, "A signing key must be specified if the specified JWT is digitally signed.");
 
             //re-create the jwt part without the signature.  This is what needs to be signed for verification:
-            String jwtWithoutSignature = base64UrlEncodedHeader + SEPARATOR_CHAR;
-            if (base64UrlEncodedPayload != null) {
-              jwtWithoutSignature += base64UrlEncodedPayload;
+            String jwtWithoutSignature = tokenized.getProtected() + SEPARATOR_CHAR;
+            if (tokenized.getBody() != null) {
+                jwtWithoutSignature += tokenized.getBody();
             }
 
-            JwtSignatureValidator validator;
+            byte[] data = jwtWithoutSignature.getBytes(StandardCharsets.US_ASCII);
+            byte[] signature = base64UrlDecoder.decode(tokenized.getDigest());
+
             try {
-                algorithm.assertValidVerificationKey(key); //since 0.10.0: https://github.com/jwtk/jjwt/issues/334
-                validator = createSignatureValidator(algorithm, key);
+                VerifySignatureRequest request =
+                    new DefaultVerifySignatureRequest(data, key, this.provider, null, signature);
+
+                SignatureValidator validator = DefaultSignatureValidatorFactory.INSTANCE.createSignatureValidator(io.jsonwebtoken.SignatureAlgorithm.forName(algorithm.getName()), key);
+
+                //if (!validator.isValid(data, signature)) {
+                if (!algorithm.verify(request)) {
+                    String msg = "JWT signature does not match locally computed signature. JWT validity cannot be " +
+                        "asserted and should not be trusted.";
+                    throw new SignatureException(msg);
+                }
             } catch (WeakKeyException e) {
                 throw e;
             } catch (InvalidKeyException | IllegalArgumentException e) {
-                String algName = algorithm.getValue();
+                String algName = algorithm.getName();
                 String msg = "The parsed JWT indicates it was signed with the " + algName + " signature " +
                     "algorithm, but the specified signing key of type " + key.getClass().getName() +
                     " may not be used to validate " + algName + " signatures.  Because the specified " +
@@ -703,12 +693,6 @@ public class DefaultJwtParser implements JwtParser {
                     "trusted.  Another possibility is that the parser was configured with the incorrect " +
                     "signing key, but this cannot be assumed for security reasons.";
                 throw new UnsupportedJwtException(msg, e);
-            }
-
-            if (!validator.isValid(jwtWithoutSignature, base64UrlEncodedDigest)) {
-                String msg = "JWT signature does not match locally computed signature. JWT validity cannot be " +
-                    "asserted and should not be trusted.";
-                throw new SignatureException(msg);
             }
         }
 
@@ -766,8 +750,8 @@ public class DefaultJwtParser implements JwtParser {
 
         Object body = claims != null ? claims : payload;
 
-        if (base64UrlEncodedDigest != null) {
-            return new DefaultJws<>((JwsHeader) header, body, base64UrlEncodedDigest);
+        if (tokenized.getDigest() != null) {
+            return new DefaultJws<>((JwsHeader) header, body, tokenized.getDigest());
         } else {
             return new DefaultJwt<>(header, body);
         }
@@ -823,13 +807,6 @@ public class DefaultJwtParser implements JwtParser {
                 throw invalidClaimException;
             }
         }
-    }
-
-    /*
-     * @since 0.5 mostly to allow testing overrides
-     */
-    protected JwtSignatureValidator createSignatureValidator(SignatureAlgorithm alg, Key key) {
-        return new DefaultJwtSignatureValidator(alg, key, base64UrlDecoder);
     }
 
     @Override

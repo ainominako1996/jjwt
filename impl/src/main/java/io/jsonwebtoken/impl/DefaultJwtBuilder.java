@@ -21,10 +21,8 @@ import io.jsonwebtoken.Header;
 import io.jsonwebtoken.JwsHeader;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.JwtParser;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.impl.crypto.DefaultJwtSigner;
-import io.jsonwebtoken.impl.crypto.JwtSigner;
 import io.jsonwebtoken.impl.lang.LegacyServices;
+import io.jsonwebtoken.impl.security.DefaultCryptoRequest;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.io.Encoder;
 import io.jsonwebtoken.io.Encoders;
@@ -33,31 +31,55 @@ import io.jsonwebtoken.io.Serializer;
 import io.jsonwebtoken.lang.Assert;
 import io.jsonwebtoken.lang.Collections;
 import io.jsonwebtoken.lang.Strings;
+import io.jsonwebtoken.security.CryptoRequest;
 import io.jsonwebtoken.security.InvalidKeyException;
+import io.jsonwebtoken.security.SignatureAlgorithm;
+import io.jsonwebtoken.security.SignatureAlgorithms;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
+import java.security.Provider;
+import java.security.SecureRandom;
 import java.util.Date;
 import java.util.Map;
 
 public class DefaultJwtBuilder implements JwtBuilder {
 
+    private static final byte[] TEST_MESSAGE_BYTES = "Test message".getBytes(StandardCharsets.UTF_8);
+
+    private Provider provider;
+    private SecureRandom secureRandom;
+
     private Header header;
     private Claims claims;
     private String payload;
 
-    private SignatureAlgorithm algorithm = SignatureAlgorithm.NONE; //assume unsigned until a key is set
+    private SignatureAlgorithm algorithm = SignatureAlgorithms.NONE;
+
     private Key key;
 
-    private Serializer<Map<String,?>> serializer;
+    private Serializer<Map<String, ?>> serializer;
 
     private Encoder<byte[], String> base64UrlEncoder = Encoders.BASE64URL;
 
     private CompressionCodec compressionCodec;
 
     @Override
-    public JwtBuilder serializeToJsonWith(Serializer<Map<String,?>> serializer) {
+    public JwtBuilder setProvider(Provider provider) {
+        this.provider = provider;
+        return this;
+    }
+
+    @Override
+    public JwtBuilder setSecureRandom(SecureRandom secureRandom) {
+        this.secureRandom = secureRandom;
+        return this;
+    }
+
+    @Override
+    public JwtBuilder serializeToJsonWith(Serializer<Map<String, ?>> serializer) {
         Assert.notNull(serializer, "Serializer cannot be null.");
         this.serializer = serializer;
         return this;
@@ -111,22 +133,47 @@ public class DefaultJwtBuilder implements JwtBuilder {
     @Override
     public JwtBuilder signWith(Key key) throws InvalidKeyException {
         Assert.notNull(key, "Key argument cannot be null.");
-        SignatureAlgorithm alg = SignatureAlgorithm.forSigningKey(key);
+        SignatureAlgorithm alg = SignatureAlgorithms.forSigningKey(key);
         return signWith(key, alg);
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public JwtBuilder signWith(Key key, SignatureAlgorithm alg) throws InvalidKeyException {
         Assert.notNull(key, "Key argument cannot be null.");
         Assert.notNull(alg, "SignatureAlgorithm cannot be null.");
-        alg.assertValidSigningKey(key); //since 0.10.0 for https://github.com/jwtk/jjwt/issues/334
+        //TODO fail fast e.g. alg.assertValidSigningKey(key); //since 0.10.0 for https://github.com/jwtk/jjwt/issues/334
         this.algorithm = alg;
         this.key = key;
+
+        //Do a quick verification that the key is allowed to be used with the algorithm
+        //This allows us to 'fail fast' during builder construction but before 'compact' might be called.  This is
+        //useful because applications may construct the builder during application startup, but only invoke
+        //compact at runtime after startup. It's usually better to identify such failure conditions at app startup
+        //rather than later in the application lifecycle.
+        try {
+            alg.sign(new DefaultCryptoRequest(TEST_MESSAGE_BYTES, key, provider, secureRandom));
+        } catch (InvalidKeyException e) {
+            throw e;
+        } catch (Exception e) {
+            String msg = "The specified key of type " + key.getClass() + " with JCA algorithm '" + key.getAlgorithm() +
+                "' cannot be used with signature algorithm '" + alg.getName() + "'. If " +
+                "key algorithm '" + key.getAlgorithm() + "' requires an external JCA provider, ensure that the " +
+                "provider is already registered with the JCA subsystem or call the 'setProvider' method first before " +
+                "invoking the 'signWith' method.  Cause: " + e.getMessage();
+            throw new InvalidKeyException(msg);
+        }
         return this;
     }
 
     @Override
-    public JwtBuilder signWith(SignatureAlgorithm alg, byte[] secretKeyBytes) throws InvalidKeyException {
+    public JwtBuilder signWith(Key key, io.jsonwebtoken.SignatureAlgorithm alg) throws InvalidKeyException {
+        Assert.notNull(alg, "SignatureAlgorithm cannot be null.");
+        return signWith(key, SignatureAlgorithms.forName(alg.getValue()));
+    }
+
+    @Override
+    public JwtBuilder signWith(io.jsonwebtoken.SignatureAlgorithm alg, byte[] secretKeyBytes) throws InvalidKeyException {
         Assert.notNull(alg, "SignatureAlgorithm cannot be null.");
         Assert.notEmpty(secretKeyBytes, "secret key byte array cannot be null or empty.");
         Assert.isTrue(alg.isHmac(), "Key bytes may only be specified for HMAC signatures.  If using RSA or Elliptic Curve, use the signWith(SignatureAlgorithm, Key) method instead.");
@@ -135,7 +182,7 @@ public class DefaultJwtBuilder implements JwtBuilder {
     }
 
     @Override
-    public JwtBuilder signWith(SignatureAlgorithm alg, String base64EncodedSecretKey) throws InvalidKeyException {
+    public JwtBuilder signWith(io.jsonwebtoken.SignatureAlgorithm alg, String base64EncodedSecretKey) throws InvalidKeyException {
         Assert.hasText(base64EncodedSecretKey, "base64-encoded secret key cannot be null or empty.");
         Assert.isTrue(alg.isHmac(), "Base64-encoded key bytes may only be specified for HMAC signatures.  If using RSA or Elliptic Curve, use the signWith(SignatureAlgorithm, Key) method instead.");
         byte[] bytes = Decoders.BASE64.decode(base64EncodedSecretKey);
@@ -143,7 +190,7 @@ public class DefaultJwtBuilder implements JwtBuilder {
     }
 
     @Override
-    public JwtBuilder signWith(SignatureAlgorithm alg, Key key) {
+    public JwtBuilder signWith(io.jsonwebtoken.SignatureAlgorithm alg, Key key) {
         return signWith(key, alg);
     }
 
@@ -319,7 +366,7 @@ public class DefaultJwtBuilder implements JwtBuilder {
         }
 
         Assert.state(algorithm != null, "algorithm instance should never be null."); // invariant
-        jwsHeader.setAlgorithm(algorithm.getValue());
+        jwsHeader.setAlgorithm(algorithm.getName());
 
         byte[] bytes;
         try {
@@ -339,11 +386,12 @@ public class DefaultJwtBuilder implements JwtBuilder {
         String jwt = base64UrlEncodedHeader + JwtParser.SEPARATOR_CHAR + base64UrlEncodedBody;
 
         if (key != null) { //jwt must be signed:
-
-            JwtSigner signer = createSigner(algorithm, key);
-
-            String base64UrlSignature = signer.sign(jwt);
-
+            byte[] data = jwt.getBytes(StandardCharsets.US_ASCII);
+            CryptoRequest<byte[], Key> request = new DefaultCryptoRequest<>(data, key, provider, secureRandom);
+            byte[] signature = algorithm.sign(request);
+            String base64UrlSignature = base64UrlEncoder.encode(signature);
+            //JwtSigner signer = createSigner(algorithm, key);
+            //String base64UrlSignature = signer.sign(jwt);
             jwt += JwtParser.SEPARATOR_CHAR + base64UrlSignature;
         } else {
             // no signature (plaintext), but must terminate w/ a period, see
@@ -354,17 +402,10 @@ public class DefaultJwtBuilder implements JwtBuilder {
         return jwt;
     }
 
-    /*
-     * @since 0.5 mostly to allow testing overrides
-     */
-    protected JwtSigner createSigner(SignatureAlgorithm alg, Key key) {
-        return new DefaultJwtSigner(alg, key, base64UrlEncoder);
-    }
-
     @Deprecated // remove before 1.0 - call the serializer and base64UrlEncoder directly
     protected String base64UrlEncode(Object o, String errMsg) {
         Assert.isInstanceOf(Map.class, o, "object argument must be a map.");
-        Map m = (Map)o;
+        Map m = (Map) o;
         byte[] bytes;
         try {
             bytes = toJson(m);
@@ -379,7 +420,7 @@ public class DefaultJwtBuilder implements JwtBuilder {
     @Deprecated //remove before 1.0 - call the serializer directly
     protected byte[] toJson(Object object) throws SerializationException {
         Assert.isInstanceOf(Map.class, object, "object argument must be a map.");
-        Map m = (Map)object;
+        Map m = (Map) object;
         return serializer.serialize(m);
     }
 }

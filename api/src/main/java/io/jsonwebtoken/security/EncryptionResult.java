@@ -20,9 +20,6 @@ package io.jsonwebtoken.security;
  */
 public interface EncryptionResult {
 
-    byte[] getInitializationVector();
-
     byte[] getCiphertext();
 
-    byte[] compact();
 }

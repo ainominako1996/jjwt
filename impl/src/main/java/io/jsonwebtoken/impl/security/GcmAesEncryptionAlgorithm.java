@@ -2,20 +2,18 @@ package io.jsonwebtoken.impl.security;
 
 import io.jsonwebtoken.lang.Assert;
 import io.jsonwebtoken.lang.RuntimeEnvironment;
-import io.jsonwebtoken.security.AuthenticatedDecryptionRequest;
-import io.jsonwebtoken.security.DecryptionRequest;
-import io.jsonwebtoken.security.EncryptionRequest;
-import io.jsonwebtoken.security.EncryptionResult;
+import io.jsonwebtoken.security.AeadIvRequest;
+import io.jsonwebtoken.security.AeadRequest;
+import io.jsonwebtoken.security.AeadIvEncryptionResult;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
-import java.security.spec.AlgorithmParameterSpec;
 
 /**
  * @since JJWT_RELEASE_VERSION
  */
-public class GcmAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
+public class GcmAesEncryptionAlgorithm extends AbstractAeadAesEncryptionAlgorithm {
 
     //TODO: Remove this static block when JDK 7 support is removed
     // JDK <= 7 does not support AES GCM mode natively and so BouncyCastle is required
@@ -33,29 +31,27 @@ public class GcmAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
     }
 
     @Override
-    protected AlgorithmParameterSpec createAlgorithmParameterSpec(byte[] iv) {
-        return new GCMParameterSpec(AES_BLOCK_SIZE_BITS, iv);
-    }
-
-    @Override
-    protected EncryptionResult doEncrypt(EncryptionRequest<SecretKey> req) throws Exception {
+    protected AeadIvEncryptionResult doEncrypt(final AeadRequest<byte[], SecretKey> req) throws Exception {
 
         //Ensure IV:
-        byte[] iv = ensureEncryptionIv(req);
+        final byte[] iv =  ensureInitializationVector(req);
 
         //Ensure Key:
         final SecretKey encryptionKey = assertKey(req);
 
         //See if there is any AAD:
-        byte[] aad = getAAD(req); //can be null if request associated data does not exist or is empty
+        final byte[] aad = getAAD(req); //can be null if request associated data does not exist or is empty
 
-        Cipher cipher = createCipher(Cipher.ENCRYPT_MODE, encryptionKey, iv);
-        if (aad != null) {
-            cipher.updateAAD(aad);
-        }
-
-        byte[] plaintext = req.getPlaintext();
-        byte[] ciphertext = cipher.doFinal(plaintext);
+        byte[] ciphertext = newCipherTemplate(req).execute(new CipherCallback<byte[]>() {
+            @Override
+            public byte[] doWithCipher(Cipher cipher) throws Exception {
+                cipher.init(Cipher.ENCRYPT_MODE, encryptionKey, new GCMParameterSpec(AES_BLOCK_SIZE_BITS, iv));
+                if (aad != null) {
+                    cipher.updateAAD(aad);
+                }
+                return cipher.doFinal(req.getData());
+            }
+        });
 
         // When using GCM mode, the JDK actually appends the authentication tag to the ciphertext, so let's
         // represent this appropriately:
@@ -69,42 +65,42 @@ public class GcmAesEncryptionAlgorithm extends AbstractAesEncryptionAlgorithm {
         byte[] tag = new byte[AES_BLOCK_SIZE_BYTES];
         System.arraycopy(taggedCiphertext, ciphertextLength, tag, 0, AES_BLOCK_SIZE_BYTES);
 
-        return new DefaultAuthenticatedEncryptionResult(iv, ciphertext, tag);
+        return new DefaultAeadIvEncryptionResult(ciphertext, iv, tag);
     }
 
     @Override
-    protected byte[] doDecrypt(DecryptionRequest<SecretKey> dreq) throws Exception {
+    protected byte[] doDecrypt(AeadIvRequest<byte[], SecretKey> req) throws Exception {
 
-        Assert.isInstanceOf(AuthenticatedDecryptionRequest.class, dreq,
-                "AES GCM encryption always authenticates and therefore requires that DecryptionRequests are " +
-                        "AuthenticatedDecryptionRequest instances.");
-        AuthenticatedDecryptionRequest<SecretKey> req = (AuthenticatedDecryptionRequest<SecretKey>) dreq;
+        final byte[] tag = req.getAuthenticationTag();
+        Assert.notEmpty(tag, "AeadDecryptionRequests must include a non-empty authentication tag.");
 
-        byte[] tag = req.getAuthenticationTag();
-        Assert.notEmpty(tag, "AuthenticatedDecryptionRequests must include a non-empty authentication tag.");
-
-        byte[] iv = assertDecryptionIv(req);
+        final byte[] iv = assertDecryptionIv(req);
 
         //Ensure Key:
-        final SecretKey key = assertKey(req);
+        final SecretKey decryptionKey = assertKey(req);
 
         //See if there is any AAD:
-        byte[] aad = getAAD(req); //can be null if request associated data does not exist or is empty
+        final byte[] aad = getAAD(req); //can be null if request associated data does not exist or is empty
 
-        final byte[] ciphertext = req.getCiphertext();
+        final byte[] ciphertext = req.getData();
 
-        Cipher cipher = createCipher(Cipher.DECRYPT_MODE, key, iv);
+        return newCipherTemplate(req).execute(new CipherCallback<byte[]>() {
+            @Override
+            public byte[] doWithCipher(Cipher cipher) throws Exception {
+                cipher.init(Cipher.DECRYPT_MODE, decryptionKey, new GCMParameterSpec(AES_BLOCK_SIZE_BITS, iv));
 
-        if (aad != null) {
-            cipher.updateAAD(aad);
-        }
+                if (aad != null) {
+                    cipher.updateAAD(aad);
+                }
 
-        //for tagged GCM, the JVM spec requires that the tag be appended to the end of the ciphertext
-        //byte array.  So we'll append it here:
-        byte[] taggedCiphertext = new byte[ciphertext.length + tag.length];
-        System.arraycopy(ciphertext, 0, taggedCiphertext, 0, ciphertext.length);
-        System.arraycopy(tag, 0, taggedCiphertext, ciphertext.length, tag.length);
+                //for tagged GCM, the JVM spec requires that the tag be appended to the end of the ciphertext
+                //byte array.  So we'll append it here:
+                byte[] taggedCiphertext = new byte[ciphertext.length + tag.length];
+                System.arraycopy(ciphertext, 0, taggedCiphertext, 0, ciphertext.length);
+                System.arraycopy(tag, 0, taggedCiphertext, ciphertext.length, tag.length);
 
-        return cipher.doFinal(taggedCiphertext);
+                return cipher.doFinal(taggedCiphertext);
+            }
+        });
     }
 }

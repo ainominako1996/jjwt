@@ -15,12 +15,10 @@
  */
 package io.jsonwebtoken.security;
 
-import io.jsonwebtoken.JwtException;
-
 /**
  * @since JJWT_RELEASE_VERSION
  */
-public class CryptoException extends JwtException {
+public class CryptoException extends SecurityException {
 
     public CryptoException(String message) {
         super(message);

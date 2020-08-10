@@ -7,9 +7,9 @@ import java.security.Key;
 /**
  * @since JJWT_RELEASE_VERSION
  */
-public interface EncryptionAlgorithm<E extends Key, D extends Key> extends Named {
+public interface EncryptionAlgorithm<T, EK extends Key, DK extends Key, EReq extends CryptoRequest<T, EK>, ERes extends EncryptionResult, DReq extends CryptoRequest<T, DK>> extends Named {
 
-    EncryptionResult encrypt(EncryptionRequest<E> request) throws CryptoException;
+    ERes encrypt(EReq request) throws CryptoException, KeyException;
 
-    byte[] decrypt(DecryptionRequest<D> request) throws CryptoException;
+    byte[] decrypt(DReq request) throws CryptoException, KeyException;
 }

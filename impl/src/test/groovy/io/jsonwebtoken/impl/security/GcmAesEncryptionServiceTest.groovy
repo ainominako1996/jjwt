@@ -44,50 +44,31 @@ class GcmAesEncryptionServiceTest {
 
         def alg = EncryptionAlgorithms.A256GCM
 
-        EncryptionRequest request = EncryptionRequests.symmetric()
-                .setAdditionalAuthenticatedData(AAD)
-                .setInitializationVector(IV)
-                .setKey(KEY)
-                .setPlaintext(P)
-                .build();
+        def req = new DefaultEncryptionRequest(P, KEY, null, null, IV, AAD)
 
-        def r = alg.encrypt(request);
+        def r = alg.encrypt(req)
 
-        assertTrue r instanceof AuthenticatedEncryptionResult
-        AuthenticatedEncryptionResult result = r as AuthenticatedEncryptionResult;
+        assertTrue r instanceof AeadIvEncryptionResult
+        AeadEncryptionResult result = r as AeadIvEncryptionResult
 
-        byte[] resultCiphertext = result.getCiphertext()
-        byte[] resultTag = result.getAuthenticationTag();
-        byte[] resultIv = result.getInitializationVector();
+        byte[] ciphertext = result.getCiphertext()
+        byte[] tag = result.getAuthenticationTag()
+        byte[] iv = result.getInitializationVector()
 
-        assertArrayEquals E, resultCiphertext
-        assertArrayEquals T, resultTag
-        assertArrayEquals IV, resultIv //shouldn't have been altered
+        assertArrayEquals E, ciphertext
+        assertArrayEquals T, tag
+        assertArrayEquals IV, iv //shouldn't have been altered
 
         // now test decryption:
-
-        DecryptionRequest decryptionRequest = DecryptionRequests.symmetric()
-                .setAdditionalAuthenticatedData(AAD)
-                .setCiphertext(resultCiphertext)
-                .setInitializationVector(resultIv)
-                .setKey(KEY)
-                .setAuthenticationTag(resultTag)
-                .build();
-
-        byte[] decryptionResult = alg.decrypt(decryptionRequest)
-
+        def dreq = new DefaultAeadIvRequest(ciphertext, KEY, null, null, iv, AAD, tag)
+        byte[] decryptionResult = alg.decrypt(dreq)
         assertArrayEquals(P, decryptionResult);
-
-        /*
-        def c = array.collect { '0x' + Integer.toHexString(it) }
-
-        println '[' + c.join(', ') + ']' */
     }
 
     @Test
     void testInstantiationWithInvalidKeyLength() {
         try {
-            new GcmAesEncryptionAlgorithm(EncryptionAlgorithmName.A128GCM.getValue(), 5);
+            new GcmAesEncryptionAlgorithm('A128GCM', 5);
             fail()
         } catch (IllegalArgumentException expected) {
         }

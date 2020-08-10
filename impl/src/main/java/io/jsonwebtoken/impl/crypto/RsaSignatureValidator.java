@@ -45,8 +45,8 @@ public class RsaSignatureValidator extends RsaProvider implements SignatureValid
     @Override
     public boolean isValid(byte[] data, byte[] signature) {
         if (key instanceof PublicKey) {
-            Signature sig = createSignatureInstance();
             PublicKey publicKey = (PublicKey) key;
+            Signature sig = createSignatureInstance();
             try {
                 return doVerify(sig, publicKey, data, signature);
             } catch (Exception e) {

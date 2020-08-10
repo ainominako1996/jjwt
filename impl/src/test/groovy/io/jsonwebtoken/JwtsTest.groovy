@@ -18,6 +18,7 @@ package io.jsonwebtoken
 import io.jsonwebtoken.impl.DefaultHeader
 import io.jsonwebtoken.impl.DefaultJweHeader
 import io.jsonwebtoken.impl.DefaultJwsHeader
+import io.jsonwebtoken.impl.JwtTokenizer
 import io.jsonwebtoken.impl.compression.DefaultCompressionCodecResolver
 import io.jsonwebtoken.impl.compression.GzipCompressionCodec
 import io.jsonwebtoken.io.Encoders
@@ -161,9 +162,8 @@ class JwtsTest {
             Jwts.parserBuilder().build().parse('foo')
             fail()
         } catch (MalformedJwtException e) {
-            assertEquals e.message, "JWT strings must contain exactly 2 period characters. Found: 0"
-//            assertEquals 'Invalid compact JWT string. JWSs must have exactly 2 period characters, ' +
-//                    'JWEs must have exactly 4. Found: 0.', e.message
+            String expected = JwtTokenizer.DELIM_ERR_MSG_PREFIX + '0'
+            assertEquals expected, e.message
         }
     }
 
@@ -173,9 +173,8 @@ class JwtsTest {
             Jwts.parserBuilder().build().parse('.')
             fail()
         } catch (MalformedJwtException e) {
-            assertEquals e.message, "JWT strings must contain exactly 2 period characters. Found: 1"
-//            assertEquals 'Invalid compact JWT string. JWSs must have exactly 2 period characters, ' +
-//                    'JWEs must have exactly 4. Found: 1.', e.message
+            String expected = JwtTokenizer.DELIM_ERR_MSG_PREFIX + '1'
+            assertEquals expected, e.message
         }
     }
 

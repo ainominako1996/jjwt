@@ -5,12 +5,5 @@ import javax.crypto.SecretKey;
 /**
  * @since JJWT_RELEASE_VERSION
  */
-public interface SymmetricEncryptionAlgorithm extends EncryptionAlgorithm<SecretKey, SecretKey> {
-
-    /**
-     * Creates and returns a new secure-random key with a length sufficient to be used by this EncryptionAlgorithm.
-     *
-     * @return a new secure-random key with a length sufficient to be used by this EncryptionAlgorithm.
-     */
-    SecretKey generateKey();
+public interface SymmetricEncryptionAlgorithm<T, EReq extends CryptoRequest<T, SecretKey>, ERes extends IvEncryptionResult, DReq extends IvRequest<T, SecretKey>> extends EncryptionAlgorithm<T, SecretKey, SecretKey, EReq, ERes, DReq>, SymmetricKeyAlgorithm {
 }
