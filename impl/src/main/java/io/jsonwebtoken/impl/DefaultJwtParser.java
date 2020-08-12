@@ -673,9 +673,8 @@ public class DefaultJwtParser implements JwtParser {
                 VerifySignatureRequest request =
                     new DefaultVerifySignatureRequest(data, key, this.provider, null, signature);
 
-                SignatureValidator validator = DefaultSignatureValidatorFactory.INSTANCE.createSignatureValidator(io.jsonwebtoken.SignatureAlgorithm.forName(algorithm.getName()), key);
-
-                //if (!validator.isValid(data, signature)) {
+                //SignatureValidator validator = DefaultSignatureValidatorFactory.INSTANCE.createSignatureValidator(io.jsonwebtoken.SignatureAlgorithm.forName(algorithm.getName()), key);
+                // if (!validator.isValid(data, signature)) {
                 if (!algorithm.verify(request)) {
                     String msg = "JWT signature does not match locally computed signature. JWT validity cannot be " +
                         "asserted and should not be trusted.";

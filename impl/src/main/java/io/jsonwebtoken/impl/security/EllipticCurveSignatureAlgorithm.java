@@ -20,6 +20,9 @@ import java.security.spec.ECGenParameterSpec;
 @SuppressWarnings("unused") //used via reflection in the io.jsonwebtoken.security.SignatureAlgorithms class
 public class EllipticCurveSignatureAlgorithm extends AbstractSignatureAlgorithm implements AsymmetricKeySignatureAlgorithm {
 
+    private static final String EC_PUBLIC_KEY_REQD_MSG =
+        "Elliptic Curve signature validation requires an ECPublicKey instance.";
+
     private static final int MIN_KEY_LENGTH_BITS = 256;
 
     private final String curveName;
@@ -63,12 +66,18 @@ public class EllipticCurveSignatureAlgorithm extends AbstractSignatureAlgorithm 
             throw new InvalidKeyException(msg);
         }
 
-        // https://github.com/jwtk/jjwt/issues/68
-        // Instead of checking for an instance of ECPrivateKey, check for PrivateKey (and ECKey assertion is above):
-        if (signing && !(key instanceof PrivateKey)) {
-            String msg = "Asymmetric key signatures must be created with PrivateKeys. The specified key is of type: " +
-                key.getClass().getName();
-            throw new InvalidKeyException(msg);
+        if (signing) {
+            // https://github.com/jwtk/jjwt/issues/68
+            // Instead of checking for an instance of ECPrivateKey, check for PrivateKey (and ECKey assertion is above):
+            if (!(key instanceof PrivateKey)) {
+                String msg = "Asymmetric key signatures must be created with PrivateKeys. The specified key is of type: " +
+                    key.getClass().getName();
+                throw new InvalidKeyException(msg);
+            }
+        } else { //verification
+            if (!(key instanceof PublicKey)) {
+                throw new InvalidKeyException(EC_PUBLIC_KEY_REQD_MSG);
+            }
         }
 
         final String name = getName();

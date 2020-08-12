@@ -47,23 +47,7 @@ public final class SignatureAlgorithms {
         return Classes.newInstance(EC, EC_ARGS, "ES" + minKeyLength, "SHA" + minKeyLength + "withECDSA", curveName, minKeyLength, signatureLength);
     }
 
-    public static final SignatureAlgorithm NONE = new SignatureAlgorithm() {
-        @Override
-        public byte[] sign(CryptoRequest request) throws SignatureException {
-            throw new SignatureException("The 'none' algorithm cannot be used to create signatures.");
-        }
-
-        @Override
-        public boolean verify(VerifySignatureRequest request) throws SignatureException {
-            throw new SignatureException("The 'none' algorithm cannot be used to verify signatures.");
-        }
-
-        @Override
-        public String getName() {
-            return "none";
-        }
-    };
-
+    public static final SignatureAlgorithm NONE = Classes.newInstance("io.jsonwebtoken.impl.security.NoneSignatureAlgorithm");
     public static final SymmetricKeySignatureAlgorithm HS256 = hmacSha(256);
     public static final SymmetricKeySignatureAlgorithm HS384 = hmacSha(384);
     public static final SymmetricKeySignatureAlgorithm HS512 = hmacSha(512);

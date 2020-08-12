@@ -161,7 +161,7 @@ public class DefaultJwtBuilder implements JwtBuilder {
                 "key algorithm '" + key.getAlgorithm() + "' requires an external JCA provider, ensure that the " +
                 "provider is already registered with the JCA subsystem or call the 'setProvider' method first before " +
                 "invoking the 'signWith' method.  Cause: " + e.getMessage();
-            throw new InvalidKeyException(msg);
+            throw new InvalidKeyException(msg, e);
         }
         return this;
     }
@@ -390,8 +390,6 @@ public class DefaultJwtBuilder implements JwtBuilder {
             CryptoRequest<byte[], Key> request = new DefaultCryptoRequest<>(data, key, provider, secureRandom);
             byte[] signature = algorithm.sign(request);
             String base64UrlSignature = base64UrlEncoder.encode(signature);
-            //JwtSigner signer = createSigner(algorithm, key);
-            //String base64UrlSignature = signer.sign(jwt);
             jwt += JwtParser.SEPARATOR_CHAR + base64UrlSignature;
         } else {
             // no signature (plaintext), but must terminate w/ a period, see
