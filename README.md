@@ -373,13 +373,13 @@ Most complexity is hidden behind a convenient and readable builder-based [fluent
 
 ```java
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.SignatureAlgorithms;
 import io.jsonwebtoken.security.Keys;
 import java.security.Key;
 
 // We need a signing key, so we'll create one just for this example. Usually
 // the key would be read from your application configuration instead.
-Key key = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+Key key = SignatureAlgorithms.HS256.generateKey();
 
 String jws = Jwts.builder().setSubject("Joe").signWith(key).compact();
 ```
@@ -529,7 +529,7 @@ key algorithms - identified by the following names:
 * `PS384`: RSASSA-PSS using SHA-384 and MGF1 with SHA-384
 * `PS512`: RSASSA-PSS using SHA-512 and MGF1 with SHA-512
 
-These are all represented in the `io.jsonwebtoken.SignatureAlgorithm` enum.
+These are all represented in the `io.jsonwebtoken.security.SignatureAlgorithms` enum class.
 
 What's really important about these algorithms - other than their security properties - is that the JWT specification
 [RFC 7518, Sections 3.2 through 3.5](https://tools.ietf.org/html/rfc7518#section-3)

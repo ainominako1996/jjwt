@@ -122,7 +122,8 @@ public interface Header<T extends Header<T>> extends Map<String,Object> {
      * <ul>
      *     <li>If the JWT is a Signed JWT (a JWS), the <a href="https://tools.ietf.org/html/rfc7515#section-4.1.1">
      *      <code>alg</code></a> (Algorithm) header parameter identifies the cryptographic algorithm used to secure the
-     *      JWS.  Consider using {@link io.jsonwebtoken.SignatureAlgorithm#forName(String) SignatureAlgorithm.forName} to
+     *      JWS.  Consider using
+     *      {@link io.jsonwebtoken.security.SignatureAlgorithms#forName(String) SignatureAlgorithms.forName} to
      *      convert this string value to a type-safe enum instance.</li>
      *      <li>If the JWT is an Encrypted JWT (a JWE), the
      * <a href="https://tools.ietf.org/html/rfc7516#section-4.1.1"><code>alg</code></a> (Algorithm) header parameter
@@ -143,7 +144,8 @@ public interface Header<T extends Header<T>> extends Map<String,Object> {
      * <ul>
      *     <li>If the JWT is a Signed JWT (a JWS), the <a href="https://tools.ietf.org/html/rfc7515#section-4.1.1">
      *      <code>alg</code></a> (Algorithm) header parameter identifies the cryptographic algorithm used to secure the
-     *      JWS.  Consider using {@link io.jsonwebtoken.SignatureAlgorithm#forName(String) SignatureAlgorithm.forName} to
+     *      JWS.  Consider using
+     *      {@link io.jsonwebtoken.security.SignatureAlgorithms#forName(String) SignatureAlgorithms.forName} to
      *      convert this string value to a type-safe enum instance.</li>
      *      <li>If the JWT is an Encrypted JWT (a JWE), the
      * <a href="https://tools.ietf.org/html/rfc7516#section-4.1.1"><code>alg</code></a> (Algorithm) header parameter
@@ -179,12 +181,11 @@ public interface Header<T extends Header<T>> extends Map<String,Object> {
      * Sets the JWT  <a href="https://tools.ietf.org/html/rfc7516#section-4.1.3"><code>zip</code></a>
      * (Compression Algorithm) header parameter value. A {@code null} value will remove
      * the property from the JSON map.
-     * <p>
      * <p>The compression algorithm is NOT part of the <a href="https://tools.ietf.org/html/draft-ietf-oauth-json-web-token-25">JWT specification</a>
      * and must be used carefully since, is not expected that other libraries (including previous versions of this one)
-     * be able to deserialize a compressed JTW body correctly. </p>
+     * be able to deserialize a compressed JWT body correctly. </p>
      *
-     * <h3>Compatiblity Note</h3>
+     * <h3>Compatibility Note</h3>
      *
      * <p>While the JWT family of specifications only defines the <code>zip</code> header in the JWE
      * (JSON Web Encryption) specification, JJWT will also support compression for JWS as well if you choose to use it.

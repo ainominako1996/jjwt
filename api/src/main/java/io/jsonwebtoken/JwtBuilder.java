@@ -392,17 +392,19 @@ public interface JwtBuilder extends ClaimsMutator<JwtBuilder> {
      * <h4>Deprecation Notice: Deprecated as of 0.10.0</h4>
      *
      * <p>Use {@link Keys Keys}.{@link Keys#hmacShaKeyFor(byte[]) hmacShaKeyFor(bytes)} to
-     * obtain the {@code Key} and then invoke {@link #signWith(Key)} or {@link #signWith(Key, SignatureAlgorithm)}.</p>
+     * obtain the {@code Key} and then invoke {@link #signWith(Key)} or
+     * {@link #signWith(Key, io.jsonwebtoken.security.SignatureAlgorithm)}.</p>
      *
      * <p>This method will be removed in the 1.0 release.</p>
      *
      * @param alg       the JWS algorithm to use to digitally sign the JWT, thereby producing a JWS.
      * @param secretKey the algorithm-specific signing key to use to digitally sign the JWT.
      * @return the builder for method chaining.
-     * @throws InvalidKeyException if the Key is insufficient or explicitly disallowed by the JWT specification as
-     *                             described by {@link SignatureAlgorithm#forSigningKey(Key)}.
+     * @throws InvalidKeyException if the Key is insufficient for the specified algorithm or explicitly disallowed by
+     *                             the JWT specification.
      * @deprecated as of 0.10.0: use {@link Keys Keys}.{@link Keys#hmacShaKeyFor(byte[]) hmacShaKeyFor(bytes)} to
-     * obtain the {@code Key} and then invoke {@link #signWith(Key)} or {@link #signWith(Key, SignatureAlgorithm)}.
+     * obtain the {@code Key} and then invoke {@link #signWith(Key)} or
+     * {@link #signWith(Key, io.jsonwebtoken.security.SignatureAlgorithm)}.
      * This method will be removed in the 1.0 release.
      */
     @Deprecated

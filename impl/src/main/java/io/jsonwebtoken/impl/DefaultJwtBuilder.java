@@ -137,22 +137,16 @@ public class DefaultJwtBuilder implements JwtBuilder {
         return signWith(key, alg);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public JwtBuilder signWith(Key key, SignatureAlgorithm alg) throws InvalidKeyException {
         Assert.notNull(key, "Key argument cannot be null.");
         Assert.notNull(alg, "SignatureAlgorithm cannot be null.");
-        //TODO fail fast e.g. alg.assertValidSigningKey(key); //since 0.10.0 for https://github.com/jwtk/jjwt/issues/334
         this.algorithm = alg;
         this.key = key;
 
         //Do a quick verification that the key is allowed to be used with the algorithm
-        //This allows us to 'fail fast' during builder construction but before 'compact' might be called.  This is
-        //useful because applications may construct the builder during application startup, but only invoke
-        //compact at runtime after startup. It's usually better to identify such failure conditions at app startup
-        //rather than later in the application lifecycle.
         try {
-            alg.sign(new DefaultCryptoRequest(TEST_MESSAGE_BYTES, key, provider, secureRandom));
+            alg.sign(new DefaultCryptoRequest<>(TEST_MESSAGE_BYTES, key, provider, secureRandom));
         } catch (InvalidKeyException e) {
             throw e;
         } catch (Exception e) {

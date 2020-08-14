@@ -8,6 +8,7 @@ import java.security.Key;
 import java.security.PrivateKey;
 import java.security.interfaces.ECKey;
 import java.security.interfaces.RSAKey;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,14 +23,14 @@ public final class SignatureAlgorithms {
     }
 
     static final String HMAC = "io.jsonwebtoken.impl.security.MacSignatureAlgorithm";
-    static final Class[] HMAC_ARGS = new Class[]{String.class, String.class, int.class};
+    static final Class<?>[] HMAC_ARGS = new Class[]{String.class, String.class, int.class};
 
     private static final String RSA = "io.jsonwebtoken.impl.security.RsaSignatureAlgorithm";
-    private static final Class[] RSA_ARGS = new Class[]{String.class, String.class, int.class};
-    private static final Class[] PSS_ARGS = new Class[]{String.class, String.class, int.class, int.class};
+    private static final Class<?>[] RSA_ARGS = new Class[]{String.class, String.class, int.class};
+    private static final Class<?>[] PSS_ARGS = new Class[]{String.class, String.class, int.class, int.class};
 
     private static final String EC = "io.jsonwebtoken.impl.security.EllipticCurveSignatureAlgorithm";
-    private static final Class[] EC_ARGS = new Class[]{String.class, String.class, String.class, int.class, int.class};
+    private static final Class<?>[] EC_ARGS = new Class[]{String.class, String.class, String.class, int.class, int.class};
 
     private static SymmetricKeySignatureAlgorithm hmacSha(int minKeyLength) {
         return Classes.newInstance(HMAC, HMAC_ARGS, "HS" + minKeyLength, "HmacSHA" + minKeyLength, minKeyLength);
@@ -43,8 +44,9 @@ public final class SignatureAlgorithms {
         return Classes.newInstance(RSA, PSS_ARGS, "PS" + digestLength, "RSASSA-PSS", preferredKeyLength, digestLength);
     }
 
-    private static AsymmetricKeySignatureAlgorithm ec(int minKeyLength, String curveName, int signatureLength) {
-        return Classes.newInstance(EC, EC_ARGS, "ES" + minKeyLength, "SHA" + minKeyLength + "withECDSA", curveName, minKeyLength, signatureLength);
+    private static AsymmetricKeySignatureAlgorithm ec(int keySize, int signatureLength) {
+        int shaSize = keySize == 521 ? 512 : keySize;
+        return Classes.newInstance(EC, EC_ARGS, "ES" + shaSize, "SHA" + shaSize + "withECDSA", "secp" + keySize + "r1", keySize, signatureLength);
     }
 
     public static final SignatureAlgorithm NONE = Classes.newInstance("io.jsonwebtoken.impl.security.NoneSignatureAlgorithm");
@@ -57,9 +59,9 @@ public final class SignatureAlgorithms {
     public static final AsymmetricKeySignatureAlgorithm PS256 = pss(256, 2048);
     public static final AsymmetricKeySignatureAlgorithm PS384 = pss(384, 3072);
     public static final AsymmetricKeySignatureAlgorithm PS512 = pss(512, 4096);
-    public static final AsymmetricKeySignatureAlgorithm ES256 = ec(256, "secp256r1", 64);
-    public static final AsymmetricKeySignatureAlgorithm ES384 = ec(384, "secp384r1", 96);
-    public static final AsymmetricKeySignatureAlgorithm ES512 = ec(512, "secp521r1", 132);
+    public static final AsymmetricKeySignatureAlgorithm ES256 = ec(256, 64);
+    public static final AsymmetricKeySignatureAlgorithm ES384 = ec(384, 96);
+    public static final AsymmetricKeySignatureAlgorithm ES512 = ec(521, 132);
 
     private static Map<String, SignatureAlgorithm> toMap(SignatureAlgorithm... algs) {
         Map<String, SignatureAlgorithm> m = new LinkedHashMap<>();
@@ -72,6 +74,10 @@ public final class SignatureAlgorithms {
     private static final Map<String, SignatureAlgorithm> STANDARD_ALGORITHMS = toMap(
         NONE, HS256, HS384, HS512, RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512
     );
+
+    public static Collection<? extends SignatureAlgorithm> values() {
+        return STANDARD_ALGORITHMS.values();
+    }
 
     /**
      * Looks up and returns the corresponding JWA standard {@code SignatureAlgorithm} instance based on a
